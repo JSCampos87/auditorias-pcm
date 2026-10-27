@@ -1074,7 +1074,7 @@ if (typeof module !== "undefined") module.exports = LOGIC;
     if (typeof HIST_SNAPSHOT !== "undefined") KEYS.forEach(function (k) { state.histInfo[k] = state.histInfo[k] || { atualizado: HIST_SNAPSHOT.atualizado, ficheiro: HIST_SNAPSHOT.ficheiro }; });
     setSync("off", "dados neste dispositivo");
     rebuild(); render();
-    setTimeout(retryMails, 2500); window.addEventListener("online", retryMails);
+    setTimeout(function () { retryMails(false); }, 2500); window.addEventListener("online", function () { retryMails(false); });
   }
   function subscribe() {
     var db = state.db;
@@ -1091,6 +1091,7 @@ if (typeof module !== "undefined") module.exports = LOGIC;
         state.ready.hist++; rebuild(); softRender();
       }, function () { });
     });
+    db.doc("config/ultima").onSnapshot(function (d) { state.ultima = d.exists ? d.data() : null; softRender(); }, function () { });
     db.doc("config/metas").onSnapshot(function (d) {
       if (d.exists) state.metas = Object.assign({}, META_DEF, d.data().semanal || {});
       softRender();
@@ -1219,6 +1220,11 @@ if (typeof module !== "undefined") module.exports = LOGIC;
   }
 
   /* ---------- PAINEL ---------- */
+  function ultimaHtml() {
+    var u = state.ultima; if (!u || !u.quando) return "";
+    var d = new Date(u.quando); var q = pad(d.getDate()) + "/" + pad(d.getMonth() + 1) + " às " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    return '<p class="note info" style="margin:10px 0 0"><b>Excel mestre atualizado ' + E(q) + "</b>" + (u.por ? " · última auditoria de " + E(u.por) + (u.setor ? " (" + E(u.setor) + (u.of ? ", OF " + E(u.of) : "") + ")" : "") : "") + (u.novas ? " · " + u.novas + " nova" + (u.novas > 1 ? "s" : "") + " nessa atualização" : "") + "</p>";
+  }
   function viewDash() {
     var recs = yr(state.records); var st = kstats(recs);
     var tot25 = KEYS.reduce(function (a, k) { return a + TOTAIS_2025[k]; }, 0);
@@ -1228,7 +1234,7 @@ if (typeof module !== "undefined") module.exports = LOGIC;
     var pl = planInfo(recs, mt);
     var pend = pending().length;
     var empty = !state.records.length;
-    var h = '<section class="hero"><div><span class="eyebrow">Semana ' + CURW + " · " + weekLabel(CURW) + " " + YEAR + '</span><h1>Cumprimento das auditorias de processo</h1><p>Fotografe a folha de auditoria preenchida à mão: a app lê os pontos, mostra-lhe o resultado para confirmar e atualiza os indicadores e o ficheiro Excel.</p></div>' +
+    var h = '<section class="hero"><div><span class="eyebrow">Semana ' + CURW + " · " + weekLabel(CURW) + " " + YEAR + '</span><h1>Cumprimento das auditorias de processo</h1><p>Fotografe a folha de auditoria preenchida à mão: a app lê os pontos, mostra-lhe o resultado para confirmar e atualiza os indicadores e o ficheiro Excel.</p>' + ultimaHtml() + '</div>' +
       '<div class="hero-actions"><button class="btn primary big" data-go="foto" type="button">' + ICON.cam + 'Carregar foto</button><button class="btn big" data-go="nova" type="button">' + ICON.form + "Preencher auditoria</button><button class=\"btn big\" data-go=\"pdf\" type=\"button\">" + ICON.pdf + "Relatório PDF</button></div></section>" +
       '<div class="row mob-only"><button class="btn" data-go="pdf" type="button" style="flex:1">' + ICON.pdf + 'Relatório PDF</button></div>';
     if (pend) h += '<div class="note row between"><span><b>' + pend + '</b> auditoria' + (pend > 1 ? 's' : '') + ' registada' + (pend > 1 ? 's' : '') + ' na app ainda não est' + (pend > 1 ? 'ão' : 'á') + ' no Excel.</span><button class="btn primary" type="button" data-exp="1">' + ICON.xl + 'Atualizar Excel mestre</button><button class=\"btn\" type=\"button\" data-envio=\"1\">' + ICON.xl + 'Gerar Excel para enviar</button></div>';
@@ -1420,7 +1426,7 @@ if (typeof module !== "undefined") module.exports = LOGIC;
     modal('<div class="ph"><div><span class="eyebrow">' + E(s.nome) + " · " + (r.src === "app" ? "registada na app" : "do Excel") + "</span><h2>OF " + E(r.of || "—") + "</h2></div><div class=\"row\">" + statusChip(r) + srcChip(r) + "</div></div>" +
       '<div class="kv">' + kv.map(function (p) { return "<div><span>" + p[0] + "</span>" + E(p[1] == null || p[1] === "" ? "—" : p[1]) + "</div>"; }).join("") + "</div>" +
       '<div class="vals">' + vals + "</div>" + (r.obs ? '<div class="note info"><b>Observações:</b> ' + E(r.obs) + "</div>" : "") + foto +
-      '<div class="row" style="justify-content:flex-end">' + (a && !state.db ? '<button class="btn" type="button" data-mail="' + E(a._id) + '">Enviar por email' + (lsGet("pcm_mailed", {})[a._id] ? " de novo" : "") + "</button>" : "") + (a ? '<button class="btn danger" type="button" id="delA" data-id="' + E(a._id) + '">Apagar</button><button class="btn" type="button" id="editA" data-id="' + E(a._id) + '">Editar</button>' : "") + '<button class="btn primary" type="button" data-close>Fechar</button></div>');
+      '<div class="row" style="justify-content:flex-end">' + (a && !state.db && EJ() ? '<button class="btn" type="button" data-mail="' + E(a._id) + '">' + (lsGet("pcm_mailed", {})[a._id] ? "Reenviar para o Excel mestre" : "Enviar para o Excel mestre") + "</button>" : "") + (a ? '<button class="btn danger" type="button" id="delA" data-id="' + E(a._id) + '">Apagar</button><button class="btn" type="button" id="editA" data-id="' + E(a._id) + '">Editar</button>' : "") + '<button class="btn primary" type="button" data-close>Fechar</button></div>');
   }
   function valChip(v) { var m = { OK: "ok", NOK: "nok", NA: "na", "N/V": "nv" }; return v ? '<span class="chip ' + (m[v] || "na") + '">' + E(v === "NA" ? "N/A" : v) + "</span>" : '<span class="chip na">—</span>'; }
   document.addEventListener("click", function (e) {
@@ -1573,9 +1579,9 @@ if (typeof module !== "undefined") module.exports = LOGIC;
       toast("Auditoria gravada · " + s.nome);
       var next = state.queue.filter(function (q) { return q.status === "pronto"; })[0];
       state.form = null;
-      var mailA = !state.db && mailTo() ? state.audits.filter(function (a) { return a._id === savedId; })[0] : null;
+      var mailA = !state.db && EJ() ? state.audits.filter(function (a) { return a._id === savedId; })[0] : null;
       if (next) { openQueue(next.id); } else { state.view = "setor"; state.arg = body.setor; render(); window.scrollTo(0, 0); if (!mailA) setTimeout(offerExport, 400); }
-      if (mailA) sendMail(mailA, true);
+      if (mailA) saveSync(mailA);
     } catch (e) { btn.disabled = false; msg.textContent = writeErr(e); }
   }
 
@@ -1751,7 +1757,7 @@ if (typeof module !== "undefined") module.exports = LOGIC;
     h += '<section class="kpis">' + KEYS.map(function (k) { var n = pend.filter(function (r) { return r.setor === k; }).length; return '<div class="kpi" style="border-left:5px solid ' + svar(k) + '"><span class="eyebrow">' + E(SET[k].nome) + '</span><span class="v">' + n + '</span><span class="d">por exportar</span></div>'; }).join("") + "</section>";
     var nEnv = envioList(false).length, nAll = envioList(true).length;
     h += '<section class="two"><div class="panel grid"><h2>Enviar as minhas auditorias</h2><p class="muted" style="margin:0">Gera um Excel pequeno só com as auditorias registadas neste dispositivo que ainda não enviou. Envie-o por email ou guarde-o na pasta de entradas da equipa no SharePoint.</p><div class="row"><button class="btn primary big" type="button" data-envio="1"' + (nEnv ? "" : " disabled") + '>' + ICON.xl + 'Gerar Excel para enviar (' + nEnv + ')</button>' + (nAll > nEnv ? '<button class="btn" type="button" data-envio="all">Incluir as já enviadas (' + nAll + ')</button>' : "") + '</div></div>' +
-      '<div class="panel grid"><h2>Juntar Excel recebidos</h2><p class="muted" style="margin:0">Escolha os ficheiros <b>Auditorias_….xlsx</b> enviados pela equipa. As auditorias entram na app sem duplicados e ficam prontas para passar para o Excel mestre.</p><div class="row"><button class="btn big" type="button" id="pickIn">' + ICON.xl + 'Escolher ficheiros recebidos</button></div></div></section>' + viewMailImport();
+      '<div class="panel grid"><h2>Juntar Excel recebidos</h2><p class="muted" style="margin:0">Escolha os ficheiros <b>Auditorias_….xlsx</b> enviados pela equipa. As auditorias entram na app sem duplicados e ficam prontas para passar para o Excel mestre.</p><div class="row"><button class="btn big" type="button" id="pickIn">' + ICON.xl + 'Escolher ficheiros recebidos</button></div></div></section>' + viewMailCfg() + (state.db ? viewMailImport() : "");
     h += '<section class="panel grid"><div class="ph"><h2>Atualizar o Excel mestre · 1 · Escolher o ficheiro</h2>' + (state.bookName ? '<span class="chip acc">' + E(state.bookName) + "</span>" : "") + '</div><div class="row"><button class="btn primary big" type="button" id="pickXl">' + ICON.xl + (state.book ? "Escolher outro ficheiro" : "Escolher ficheiro Excel") + '</button><span class="muted" style="font-size:.86rem">Painel atualizado com: ' + histSummary() + "</span></div>";
     if (state.busy) h += '<p><span class="spin"></span> ' + E(state.busy) + "</p>";
     if (info) {
@@ -2001,6 +2007,16 @@ if (typeof module !== "undefined") module.exports = LOGIC;
     if (typeof JSZip === "undefined") { toast("Não foi possível carregar o gerador de Excel. Verifique a ligação à internet."); return; }
     var list = envioList(all);
     if (!list.length) { toast(all ? "Não há auditorias por exportar." : "Não há auditorias novas por enviar."); return; }
+    var sb = await smallBlob(list), blob = sb.blob, name = sb.name;
+    try {
+      await saveFile(name, blob);
+      var sent = lsGet("pcm_sent", {}); list.forEach(function (a) { sent[a._id] = TODAY; }); lsSet("pcm_sent", sent);
+      modal('<span class="eyebrow">Excel para enviar</span><h2>' + list.length + " auditoria" + (list.length > 1 ? "s" : "") + " no ficheiro</h2><p class=\"mono\" style=\"margin:0\">" + E(name) + '</p><p class="muted" style="margin:0">Envie este ficheiro por email a quem gere o Excel mestre, ou guarde-o na pasta de entradas da equipa no SharePoint. Não substitua o Excel mestre com ele.</p><div class="row" style="justify-content:flex-end"><button class="btn primary" type="button" data-close>OK</button></div>');
+      if (state.view === "excel") render(true);
+    } catch (e) { toast(e && e.code === "declined" ? "Transferência cancelada." : "Não foi possível gerar o ficheiro (" + (e && (e.code || e.message) || "erro") + ")."); }
+  }
+  /* Excel pequeno (mesmas folhas/colunas do mestre + folha oculta _pcm) para uma lista de auditorias */
+  async function smallBlob(list) {
     var sheets = [];
     SETORES.forEach(function (st) {
       var as = list.filter(function (a) { return a.setor === st.key; }); if (!as.length) return;
@@ -2013,14 +2029,13 @@ if (typeof module !== "undefined") module.exports = LOGIC;
     var blob = await z.generateAsync({ type: "blob", compression: "DEFLATE", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     var who = {}; list.forEach(function (a) { var f = (a.auditor || "").split(" ")[0]; if (f) who[f] = (who[f] || 0) + 1; });
     var nm = Object.keys(who).sort(function (a, b) { return who[b] - who[a]; })[0] || "equipa";
-    var d = new Date(); var name = "Auditorias_" + nm.normalize("NFD").replace(/[̀-ͯ]/g, "") + "_" + TODAY + "_" + pad(d.getHours()) + pad(d.getMinutes()) + ".xlsx";
-    try {
-      await saveFile(name, blob);
-      var sent = lsGet("pcm_sent", {}); list.forEach(function (a) { sent[a._id] = TODAY; }); lsSet("pcm_sent", sent);
-      modal('<span class="eyebrow">Excel para enviar</span><h2>' + list.length + " auditoria" + (list.length > 1 ? "s" : "") + " no ficheiro</h2><p class=\"mono\" style=\"margin:0\">" + E(name) + '</p><p class="muted" style="margin:0">Envie este ficheiro por email a quem gere o Excel mestre, ou guarde-o na pasta de entradas da equipa no SharePoint. Não substitua o Excel mestre com ele.</p><div class="row" style="justify-content:flex-end"><button class="btn primary" type="button" data-close>OK</button></div>');
-      if (state.view === "excel") render(true);
-    } catch (e) { toast(e && e.code === "declined" ? "Transferência cancelada." : "Não foi possível gerar o ficheiro (" + (e && (e.code || e.message) || "erro") + ")."); }
+    var d = new Date(); var nm2 = nm.normalize("NFD").replace(/[̀-ͯ]/g, "");
+    var name = list.length === 1
+      ? "Auditorias_" + nm2 + "_" + SET[list[0].setor].nome.normalize("NFD").replace(/[̀-ͯ]/g, "") + "_OF" + (LOGIC.ofDigits(list[0].of) || "-") + "_" + list[0].data + "_" + (LOGIC.getHora(list[0]) || pad(d.getHours()) + ":" + pad(d.getMinutes())).replace(":", "") + ".xlsx"
+      : "Auditorias_" + nm2 + "_" + TODAY + "_" + pad(d.getHours()) + pad(d.getMinutes()) + ".xlsx";
+    return { blob: blob, name: name };
   }
+  function blobToDataUrl(b) { return new Promise(function (ok, ko) { var r = new FileReader(); r.onload = function () { ok(r.result); }; r.onerror = ko; r.readAsDataURL(b); }); }
   async function importEnvio(files) {
     if (typeof JSZip === "undefined") { toast("Não foi possível carregar o leitor de Excel. Verifique a ligação."); return; }
     state.busy = "A juntar " + files.length + " ficheiro" + (files.length > 1 ? "s" : "") + "…"; render(true);
@@ -2109,31 +2124,42 @@ if (typeof module !== "undefined") module.exports = LOGIC;
   });
 
   /* ---------- envio de cada auditoria por email (versão sem Claude) ---------- */
-  var MAIL_DEF = "ricardo.silva@graphicsleader.pt";
-  /* envio automático por EmailJS, como na app PCV Ferramentas: config.js ao lado do index.html com
-     window.PCV_CONFIG = { emailjs: { publicKey, serviceId, templateId } } (modelo: Para {{to_email}}, Assunto {{subject}}, Corpo {{message}}) */
-  function EJ() { var c = ((window.PCM_CONFIG || window.PCV_CONFIG || {}).emailjs) || {}; return c.publicKey && c.serviceId && c.templateId ? c : null; }
-  async function ejSend(to, subject, message) {
+  /* ---------- envio automático para o Excel mestre (versão sem Claude) ----------
+     Ao gravar, a auditoria segue em segundo plano (EmailJS) para a caixa de entrada lida pela tarefa automática,
+     que a escreve no Excel mestre do SharePoint. config.js ao lado do index.html:
+     window.PCV_CONFIG = { emailjs: { publicKey, serviceId, templateIdAuditorias, destino } } */
+  var DEST_DEF = "joao.campos@graphicsleader.pt";
+  function EJ() { var c = ((window.PCM_CONFIG || window.PCV_CONFIG || {}).emailjs) || {}; var t = c.templateIdAuditorias || c.templateId; return c.publicKey && c.serviceId && t ? { publicKey: c.publicKey, serviceId: c.serviceId, templateId: t, destino: c.destino || DEST_DEF } : null; }
+  async function ejSend(to, subject, message, extra) {
     var c = EJ(); if (!c) throw new Error("envio automático não configurado (config.js)");
+    var tp = Object.assign({ to_email: to, subject: subject, message: message, reply_to: to.split(",")[0] }, extra || {});
     var res = await fetch("https://api.emailjs.com/api/v1.0/email/send", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ service_id: c.serviceId, template_id: c.templateId, user_id: c.publicKey, template_params: { to_email: to, subject: subject, message: message, reply_to: to.split(",")[0] } }) });
+      body: JSON.stringify({ service_id: c.serviceId, template_id: c.templateId, user_id: c.publicKey, template_params: tp }) });
     if (!res.ok) throw new Error("EmailJS " + res.status + ": " + (await res.text()).slice(0, 120));
   }
-  function mailList() { return (mailTo() || MAIL_DEF).split(/[;,\s]+/).filter(Boolean).join(","); }
-  async function retryMails() {
-    if (state.db || !EJ() || !mailTo()) return;
-    var sent = lsGet("pcm_mailed", {}), auto = lsGet("pcm_mailauto", {});
-    var list = state.audits.filter(function (a) { return auto[a._id] === "pendente" && !sent[a._id]; }).slice(0, 10);
-    for (var i = 0; i < list.length; i++) { try { await autoMail(list[i], true); } catch (e) { break; } }
+  function mailTo() { return EJ() ? EJ().destino : ""; }
+  function pendingSync() { var st = lsGet("pcm_mailauto", {}), sent = lsGet("pcm_mailed", {}); return state.audits.filter(function (a) { return st[a._id] === "pendente" && !sent[a._id]; }); }
+  function nextRun() { var d = new Date(); var t = new Date(d); t.setMinutes(54, 0, 0); if (t <= d) t.setHours(t.getHours() + 1); if (t.getHours() > 21 || t.getHours() < 7) return "na próxima atualização automática"; return "até às " + pad(t.getHours()) + ":54"; }
+  var syncing = false;
+  async function retryMails(manual) {
+    if (state.db || !EJ() || syncing) return; var list = pendingSync().slice(0, 10); if (!list.length) { if (manual) toast("Não há auditorias por enviar."); return; }
+    syncing = true; var ok = 0;
+    for (var i = 0; i < list.length; i++) { try { await syncAudit(list[i], true); ok++; } catch (e) { break; } }
+    syncing = false; if (ok) toast(ok + " auditoria" + (ok > 1 ? "s pendentes enviadas" : " pendente enviada") + " para o Excel mestre."); else if (manual) toast("Sem ligação. As auditorias continuam guardadas neste telemóvel.");
+    if (state.view === "metas" || state.view === "excel") render(true);
   }
-  async function autoMail(a, quiet) {
-    var m = mailParts(a), to = mailList(); var auto = lsGet("pcm_mailauto", {}); auto[a._id] = "pendente"; lsSet("pcm_mailauto", auto);
-    await ejSend(to, m.subj, m.body + "\n\nMensagem automática da app Auditorias PCM.");
+  async function syncAudit(a, quiet) {
+    var st = lsGet("pcm_mailauto", {}); st[a._id] = "pendente"; lsSet("pcm_mailauto", st);
+    var m = mailParts(a), extra = {};
+    await ejSend(mailTo(), m.subj, m.body, extra);
     var sent = lsGet("pcm_mailed", {}); sent[a._id] = new Date().toISOString(); lsSet("pcm_mailed", sent);
-    auto = lsGet("pcm_mailauto", {}); auto[a._id] = "enviado"; lsSet("pcm_mailauto", auto);
-    toast("Email enviado a " + to.replace(/,/g, ", ") + (quiet ? " (auditoria pendente)" : "") + ".");
+    st = lsGet("pcm_mailauto", {}); st[a._id] = "enviado"; lsSet("pcm_mailauto", st);
+    if (!quiet) toast("Auditoria enviada para o Excel mestre. Entra " + nextRun() + ".");
   }
-  function mailTo() { return lsGet("pcm_mailon", true) ? (lsGet("pcm_mailto", MAIL_DEF) || "").trim() : ""; }
+  async function saveSync(a) {
+    try { await syncAudit(a, false); }
+    catch (e) { toast("Sem ligação: a auditoria ficou guardada neste telemóvel e segue para o Excel mestre assim que houver rede."); }
+  }
   function b64e(str) { return btoa(unescape(encodeURIComponent(str))); }
   function b64d(b) { return decodeURIComponent(escape(atob(b))); }
   function auditCode(a) {
@@ -2142,40 +2168,35 @@ if (typeof module !== "undefined") module.exports = LOGIC;
     return "#PCM1#" + b64e(JSON.stringify(o)) + "#FIM#";
   }
   function mailParts(a) {
-    var s = SET[a.setor]; var r = LOGIC.fromApp(Object.assign({ _id: a._id }, a));
+    var s = SET[a.setor];
     var noks = s.itens.filter(function (it) { return (a.itens || {})[it[0]] === "NOK"; }).map(function (it) { return "  - p." + it[0] + " " + it[1]; });
     var hora = LOGIC.getHora(a);
-    var subj = "Auditoria PCM · " + s.nome + " · OF " + (a.of || "—") + " · " + fmtDate(a.data) + (hora ? " " + hora : "") + " · " + (a.auditor || "");
-    var L = ["Auditoria PCM registada na app.", "",
+    var subj = "[PCM-AUD] " + s.nome + " · OF " + (a.of || "—") + " · " + fmtDate(a.data) + (hora ? " " + hora : "") + " · " + (a.auditor || "");
+    var L = ["Registo automático da app Auditorias PCM para o Excel mestre. Não é preciso fazer nada com este email.", "",
       "Setor: " + s.nome, "Data: " + fmtDate(a.data) + (hora ? "  Hora: " + hora : "") + "  Turno: " + (a.turno || "—"),
       "OF: " + (a.of || "—") + (a.mm ? "  MM: " + a.mm : "") + (a.maquina ? "  Máquina: " + a.maquina : ""),
       "Operador: " + (a.operador || "—") + (a.cliente ? "  Cliente: " + a.cliente : ""), "Auditor: " + (a.auditor || "—"),
       "Resultado: " + (noks.length ? noks.length + " NOK" : "sem NOK")].concat(noks);
     if (a.obs) L.push("Obs: " + a.obs);
-    L.push("", "Para juntar ao Excel mestre: copiar todo este email e colar na app Auditorias PCM, em Excel > Auditorias recebidas por email.", "", auditCode(a));
+    L.push("", auditCode(a));
     return { subj: subj, body: L.join("\n") };
   }
-  async function sendMail(a, auto) {
-    if (auto && EJ()) {
-      try { await autoMail(a, false); return; }
-      catch (e) { toast("Não foi possível enviar o email automático (" + (e.message || e) + "). Envie pelo email do telemóvel.", 1); }
-    }
-    var to = mailList(); var m = mailParts(a);
-    var href = "mailto:" + encodeURIComponent(to).replace(/%40/g, "@") + "?subject=" + encodeURIComponent(m.subj) + "&body=" + encodeURIComponent(m.body);
-    var sent = lsGet("pcm_mailed", {}); sent[a._id] = new Date().toISOString(); lsSet("pcm_mailed", sent);
-    state.mailText = m.subj + "\n\n" + m.body;
-    modal('<span class="eyebrow">Enviar auditoria</span><h2>Email para ' + E(to) + '</h2><p class="muted" style="margin:0">' + (auto ? "O email abre já preenchido. Só tem de tocar em <b>Enviar</b>." : "Toque em Abrir email e depois em <b>Enviar</b>.") + ' Se o email não abrir, copie o texto e envie-o a ' + E(to) + '.</p>' +
-      '<div class="row"><a class="btn primary big" id="mailGo" href="' + E(href) + '">Abrir email</a><button class="btn" type="button" id="mailCopy">Copiar texto</button></div>' +
-      '<div class="row" style="justify-content:flex-end"><button class="btn ghost" type="button" data-close>Fechar</button></div>');
-    if (auto && !EJ()) { try { window.location.href = href; } catch (e) { } }
-  }
   document.addEventListener("click", function (e) {
-    if (e.target.closest("#mailCopy")) { var t = state.mailText || ""; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast("Texto copiado."); }, function () { toast("Não foi possível copiar."); }); }
-    var b = e.target.closest("[data-mail]"); if (b) { var a = state.audits.filter(function (x) { return x._id === b.getAttribute("data-mail"); })[0]; if (a) sendMail(a, false); }
+    var b = e.target.closest("[data-mail]"); if (b) { var a = state.audits.filter(function (x) { return x._id === b.getAttribute("data-mail"); })[0]; if (a) { closeModal(); saveSync(a); } }
     if (e.target.closest("#mailImp")) importMail();
-    if (e.target.closest("#mailTest")) { var to = mailList(); ejSend(to, "Auditorias PCM · email de teste", "Teste de envio automático da app Auditorias PCM.\n\nSe recebeu esta mensagem, o envio das auditorias por email está a funcionar.").then(function () { toast("Email de teste enviado para " + to + "."); }, function (err) { toast("Falhou: " + (err.message || err), 1); }); }
-    if (e.target.closest("#saveMail")) { var v = ($("#mailToIn").value || "").trim(); if (v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { toast("Email inválido."); return; } lsSet("pcm_mailto", v || MAIL_DEF); lsSet("pcm_mailon", $("#mailOn").checked); toast("Guardado neste dispositivo."); render(true); }
+    if (e.target.closest("#syncNow")) retryMails(true);
+    if (e.target.closest("#mailTest")) { var to = mailTo(); ejSend(to, "[PCM-AUD] Teste", "Teste da ligação da app Auditorias PCM ao Excel mestre. Pode ignorar.").then(function () { toast("Teste enviado para " + to + "."); }, function (err) { toast("Falhou: " + (err.message || err)); }); }
   });
+  async function shareXl(id) {
+    var a = state.audits.filter(function (x) { return x._id === id; })[0]; if (!a) return;
+    if (typeof JSZip === "undefined") { toast("Não foi possível carregar o gerador de Excel. Verifique a ligação."); return; }
+    var sb = await smallBlob([a]);
+    try {
+      var f = new File([sb.blob], sb.name, { type: sb.blob.type });
+      if (navigator.canShare && navigator.canShare({ files: [f] })) { var m = mailParts(a); await navigator.share({ files: [f], title: m.subj, text: m.subj }); return; }
+    } catch (e) { if (e && e.name === "AbortError") return; }
+    await saveFile(sb.name, sb.blob);
+  }
   function parseMailCodes(txt) {
     var out = [], re = /#PCM1#([\s\S]*?)#FIM#/g, m;
     while ((m = re.exec(txt || ""))) { try { out.push(JSON.parse(b64d(m[1].replace(/[^A-Za-z0-9+\/=]/g, "")))); } catch (e) { out.push(null); } }
@@ -2208,18 +2229,17 @@ if (typeof module !== "undefined") module.exports = LOGIC;
   }
   function viewMailCfg() {
     if (state.db) return "";
-    var on = lsGet("pcm_mailon", true), to = lsGet("pcm_mailto", MAIL_DEF);
-    return '<section class="panel grid"><h2>Enviar auditorias por email</h2><p class="muted" style="margin:0">Cada auditoria gravada neste dispositivo é enviada por email a quem atualiza o Excel mestre (pode pôr vários emails separados por vírgula).</p>' +
-      '<div class="form-head"><div class="fld" style="grid-column:1/-1"><label for="mailToIn">Enviar para</label><input id="mailToIn" type="email" inputmode="email" autocomplete="off" value="' + E(to) + '"></div></div>' +
-      '<label class="row" style="gap:8px"><input type="checkbox" id="mailOn"' + (on ? " checked" : "") + '> Enviar o email automaticamente ao gravar</label>' +
-      (EJ() ? '<div class="note info"><b>Envio automático ativo.</b> O email sai sozinho ao gravar a auditoria (EmailJS · ' + E(EJ().serviceId) + '). Sem rede, fica pendente e é enviado quando a app voltar a abrir com ligação.</div>' :
-        '<div class="note"><b>Envio automático por configurar.</b> Falta o ficheiro config.js ao lado do index.html (o mesmo da app PCV Ferramentas). Até lá, ao gravar abre o email já preenchido e só tem de tocar em Enviar.</div>') +
-      '<div class="row"><button class="btn primary" type="button" id="saveMail">Guardar</button>' + (EJ() ? '<button class="btn" type="button" id="mailTest">Enviar email de teste</button>' : "") + "</div></section>";
+    var n = EJ() ? pendingSync().length : 0;
+    return '<section class="panel grid"><div class="ph"><h2>Ligação ao Excel mestre</h2>' + (EJ() ? (n ? '<span class="chip warn">' + n + ' por enviar</span>' : '<span class="chip ok">Ativa</span>') : '<span class="chip warn">Por configurar</span>') + "</div>" +
+      (EJ() ? '<p class="muted" style="margin:0">Cada auditoria gravada neste telemóvel segue sozinha para o Excel mestre do SharePoint (atualização automática de hora a hora). Sem rede, fica guardada e segue quando houver ligação.</p>' +
+        '<div class="row">' + (n ? '<button class="btn primary" type="button" id="syncNow">Enviar ' + n + ' pendente' + (n > 1 ? "s" : "") + ' agora</button>' : "") + '<button class="btn" type="button" id="mailTest">Testar ligação</button></div>'
+        : '<p class="muted" style="margin:0">Falta o ficheiro config.js ao lado do index.html. Até lá, use "Gerar Excel para enviar" e guarde o ficheiro na pasta de entradas do SharePoint.</p>') + "</section>";
   }
+
 
   /* ---------- METAS ---------- */
   function viewMetas() {
-    var h = '<section class="hero"><div><span class="eyebrow">Planeamento</span><h1>Definições</h1><p>Metas semanais por setor, envio por email e leitura automática de fotos.</p></div></section>' + viewMailCfg() + viewLeitura() + '<section class="panel" style="padding-bottom:0;border:0;background:none"><h2>Metas semanais</h2><p class="muted" style="margin:6px 0 0">Número de auditorias planeadas por semana em cada setor. Usado no cumprimento semanal e acumulado.</p></section>';
+    var h = '<section class="hero"><div><span class="eyebrow">Planeamento</span><h1>Definições</h1><p>Metas semanais por setor, ligação ao Excel mestre e leitura automática de fotos.</p></div></section>' + viewMailCfg() + viewLeitura() + '<section class="panel" style="padding-bottom:0;border:0;background:none"><h2>Metas semanais</h2><p class="muted" style="margin:6px 0 0">Número de auditorias planeadas por semana em cada setor. Usado no cumprimento semanal e acumulado.</p></section>';
     h += '<section class="panel"><div class="form-head">' + KEYS.map(function (k) { var avg = avgWeek(k); return '<div class="fld"><label for="m-' + k + '"><i class="sw" style="background:' + svar(k) + '"></i>' + E(SET[k].nome) + '</label><input id="m-' + k + '" type="number" min="0" step="1" inputmode="numeric" value="' + E(state.metas[k]) + '"><span class="muted" style="font-size:.78rem">Média ' + YEAR + ": " + avg + " / semana · 2025: " + (TOTAIS_2025[k] / 52).toFixed(1).replace(".", ",") + "</span></div>"; }).join("") + '</div><div class="row" style="margin-top:14px;justify-content:flex-end"><span class="muted" id="metaMsg"></span><button class="btn primary big" type="button" id="saveMetas">Guardar metas</button></div></section>';
     return h;
   }

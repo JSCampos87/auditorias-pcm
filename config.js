@@ -1,13 +1,13 @@
-/* Configuração do envio automático de email (EmailJS) — Auditorias PCM
-   Preencha os 3 códigos da sua conta em emailjs.com (os mesmos da app PCV Ferramentas, se já existirem):
-     publicKey  -> Account > API Keys > Public Key
-     serviceId  -> Email Services > Service ID
-     templateId -> Email Templates > Template ID
-   O modelo (template) no EmailJS deve ter:  To = {{to_email}}   Subject = {{subject}}   Conteúdo = {{message}}
-   Enquanto ficarem vazios, a app abre o email já preenchido e o auditor só toca em Enviar. */
+/* Ligação da app Auditorias PCM ao Excel mestre (EmailJS)
+   Cada auditoria gravada segue em segundo plano para a caixa "destino"; a tarefa automática lê-a e escreve-a no Excel mestre.
+     publicKey            -> EmailJS > Account > Public Key
+     serviceId            -> EmailJS > Email Services > Service ID
+     templateIdAuditorias -> EmailJS > Email Templates > modelo "Auditoria PCM" > Template ID
+   Modelo "Auditoria PCM":  To Email = {{to_email}}   Subject = {{subject}}   Content = {{message}} */
 window.PCV_CONFIG = window.PCV_CONFIG || {};
-window.PCV_CONFIG.emailjs = {
-  publicKey: "",
-  serviceId: "",
-  templateId: ""
-};
+window.PCV_CONFIG.emailjs = Object.assign(window.PCV_CONFIG.emailjs || {}, {
+  publicKey: "rHK1AkbCr-1rYxskL",
+  serviceId: "service_1kvimmm",
+  templateIdAuditorias: "template_pndfbeo",
+  destino: "joao.campos@graphicsleader.pt"
+});
