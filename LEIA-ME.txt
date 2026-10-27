@@ -1,0 +1,16 @@
+AUDITORIAS PCM - ficheiros para o GitHub
+=========================================
+
+Carregar estes ficheiros na raiz do repositório (Add file > Upload files > Commit changes):
+  - index.html   (a app; substitui o anterior)
+  - icon.png     (ícone do ecrã principal do iPhone)
+  - config.js    (envio automático de email)
+
+Envio automático de email:
+  1. Abra o config.js (no GitHub: clicar no ficheiro > ícone do lápis para editar).
+  2. Preencha publicKey, serviceId e templateId com os códigos do EmailJS
+     (os mesmos da app PCV Ferramentas, se já existirem).
+  3. Commit changes. Na app: Definições > "Envio automático ativo" > Enviar email de teste.
+  Destinatário por defeito: ricardo.silva@graphicsleader.pt (muda-se em Definições).
+
+NÃO carregar no GitHub: Auditorias_PCM.html (tem o histórico da empresa) nem ficheiros Excel.
