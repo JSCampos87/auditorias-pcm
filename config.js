@@ -9,5 +9,5 @@ window.PCV_CONFIG.emailjs = Object.assign(window.PCV_CONFIG.emailjs || {}, {
   publicKey: "rHK1AkbCr-1rYxskL",
   serviceId: "service_1kvimmm",
   templateIdAuditorias: "template_pndfbeo",
-  destino: "joao.campos@graphicsleader.pt"
+  destino: "ricardo.silva@graphicsleader.pt,mario.david@graphicsleader.pt"
 });
