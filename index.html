@@ -258,6 +258,8 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
 .dp small { position: absolute; top: 2px; left: 4px; font-size: .6rem; font-weight: 500; color: var(--muted, #777); }
 .dp.ok { background: var(--ok); border-color: var(--ok); color: #fff; } .dp.ok small, .dp.nok small { color: rgba(255,255,255,.8); }
 .dp.nok { background: var(--nok); border-color: var(--nok); color: #fff; }
+.detrow.one .detpass { grid-template-columns: 1fr; max-width: 320px; }
+.dp.big { height: 48px; font-size: .95rem; }
 @media (max-width: 640px) { .detrow { grid-template-columns: 1fr; } .detpass { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 </style>
 
@@ -2281,20 +2283,25 @@ var DETETOR_TPL="UEsDBBQABgAIAAAAIQCvh0Lk2AEAABIIAAATAAgCW0NvbnRlbnRfVHlwZXNdLnh
     } catch (err) { $("#metaMsg").textContent = writeErr(err); }
   });
 
-  /* ---------- DETETOR DE METAIS · R.PPCM.51 Registo de Verificação de PCC ----------
-     Verificação com 3 corpos de prova (Ferro 2,5 mm, Não ferroso 3,0 mm, Aço inox 3,0 mm), 10 passagens cada.
-     Um registo por mês e por máquina; exporta o próprio impresso R.PPCM.51 preenchido (DETETOR_TPL). */
+  /* ---------- DETETOR DE METAIS · PCC ----------
+     Dois tipos de teste com os 3 corpos de prova (Ferro 2,5 mm, Não ferroso 3,0 mm, Aço inox 3,0 mm):
+     - "diario": 1 passagem de cada corpo de prova, 2 testes por dia em cada máquina;
+     - "fiabilidade": 10 passagens de cada, trimestral, no impresso R.PPCM.51 (DETETOR_TPL). */
   var DET_PECAS = [
     ["fe", "Teste com corpo de prova - FERRO 2,5mm", "Ferro 2,5 mm", "#e53935"],
     ["nf", "Teste com corpo de prova - NÃO FERROSO 3,0 mm", "Não ferroso 3,0 mm", "#7cb342"],
     ["inox", "Teste com corpo de prova - AÇO INOX 3,0 mm", "Aço inox 3,0 mm", "#1e9be0"]
   ];
   var DET_MAQ = ["Master", "Vision"];
+  var DET_DIA = 2; /* testes diários por máquina */
+  var DET_TIPOS = { diario: { nome: "Monitorização", pass: 1, sub: "2 vezes por dia · 1 passagem de cada corpo de prova" }, fiabilidade: { nome: "Verificação", pass: 10, sub: "trimestral · 10 passagens de cada corpo de prova · R.PPCM.51" } };
   state.detetor = []; state.detForm = null;
   function mesLabel(ym) { var p = String(ym).split("-"); return MESES[+p[1] - 1] + "/" + p[0].slice(2); }
+  function detTipo(d) { return d && d.tipoTeste === "fiabilidade" ? "fiabilidade" : (d && d.tipoTeste) || ((((d || {}).res || {}).fe || []).length === 10 ? "fiabilidade" : "diario"); }
   function detRes(d) {
-    var n = 0, nok = 0; DET_PECAS.forEach(function (p) { ((d.res || {})[p[0]] || []).forEach(function (v) { if (v) { n++; if (v === "NOK") nok++; } }); });
-    return { n: n, nok: nok, completo: n === 30, ok: n === 30 && !nok };
+    var tot = 3 * DET_TIPOS[detTipo(d)].pass, n = 0, nok = 0;
+    DET_PECAS.forEach(function (p) { ((d.res || {})[p[0]] || []).forEach(function (v) { if (v) { n++; if (v === "NOK") nok++; } }); });
+    return { n: n, tot: tot, nok: nok, completo: n === tot, ok: n === tot && !nok };
   }
   function detSorted() { return state.detetor.slice().sort(function (a, b) { var x = (a.data || "") + (a.hora || ""), y = (b.data || "") + (b.hora || ""); return x < y ? 1 : x > y ? -1 : 0; }); }
   function detMaqs() { var m = DET_MAQ.slice(); state.detetor.forEach(function (d) { if (d.maquina && m.indexOf(d.maquina) < 0) m.push(d.maquina); }); return m; }
@@ -2306,17 +2313,23 @@ var DETETOR_TPL="UEsDBBQABgAIAAAAIQCvh0Lk2AEAABIIAAATAAgCW0NvbnRlbnRfVHlwZXNdLnh
     }, function () { });
   }
   function detChip(d) { var r = detRes(d); return !r.completo ? '<span class="chip warn">Incompleto</span>' : r.ok ? '<span class="chip ok">Conforme</span>' : '<span class="chip nok">Não conforme · ' + r.nok + "</span>"; }
+  function quarterOf(iso) { var m = +String(iso).slice(5, 7); return String(iso).slice(0, 4) + "-T" + Math.ceil(m / 3); }
+  function quarterLabel(q) { return q.split("-")[1] + " " + q.split("-")[0]; }
 
-  /* resumo do mês atual por máquina (painel e página) */
+  /* resumo por máquina: testes de hoje e fiabilidade do trimestre */
   function detStatusCards() {
-    var ym = TODAY.slice(0, 7);
+    var q = quarterOf(TODAY);
     return detMaqs().map(function (m) {
       var list = detSorted().filter(function (d) { return d.maquina === m; });
-      var cur = list.filter(function (d) { return String(d.data).slice(0, 7) === ym; })[0];
-      var last = list[0];
-      var st = cur ? (detRes(cur).ok ? ["ok", "Feito · conforme"] : detRes(cur).completo ? ["nok", "Feito · NÃO CONFORME"] : ["warn", "Incompleto"]) : ["warn", "Por fazer"];
-      return '<div class="kpi"><span class="eyebrow">' + E(m) + " · " + mesLabel(ym) + '</span><span class="v" style="font-size:1.15rem"><span class="chip ' + st[0] + '">' + st[1] + "</span></span>" +
-        '<span class="d">' + (last ? "Última: " + fmtDate(last.data) + (last.hora ? " " + E(last.hora) : "") + (last.verificador ? " · " + E(last.verificador) : "") : "Sem verificações registadas") + "</span></div>";
+      var hoje = list.filter(function (d) { return detTipo(d) === "diario" && d.data === TODAY; });
+      var nokHoje = hoje.some(function (d) { return detRes(d).nok; });
+      var fia = list.filter(function (d) { return detTipo(d) === "fiabilidade" && quarterOf(d.data) === q; })[0];
+      var lastD = list.filter(function (d) { return detTipo(d) === "diario"; })[0];
+      var chipD = nokHoje ? ["nok", "NÃO CONFORME"] : hoje.length >= DET_DIA ? ["ok", hoje.length + "/" + DET_DIA + " feitos"] : ["warn", hoje.length + "/" + DET_DIA + " feitos"];
+      var chipF = fia ? (detRes(fia).ok ? ["ok", "Feito · conforme"] : ["nok", "Feito · NÃO CONFORME"]) : ["warn", "Por fazer"];
+      return '<div class="kpi"><span class="eyebrow">' + E(m) + '</span><span class="d">Monitorização hoje <span class="chip ' + chipD[0] + '">' + chipD[1] + "</span></span>" +
+        '<span class="d">Verificação ' + quarterLabel(q) + ' <span class="chip ' + chipF[0] + '">' + chipF[1] + "</span></span>" +
+        '<span class="d">' +  (lastD ? "Última monitorização: " + fmtDate(lastD.data) + (lastD.hora ? " " + E(lastD.hora) : "") + (lastD.verificador ? " · " + E(lastD.verificador) : "") : "Sem testes registados") + "</span></div>";
     }).join("");
   }
   function detDashSection() {
@@ -2326,69 +2339,81 @@ var DETETOR_TPL="UEsDBBQABgAIAAAAIQCvh0Lk2AEAABIIAAATAAgCW0NvbnRlbnRfVHlwZXNdLnh
   /* ---------- página ---------- */
   function viewDetetor() {
     var list = detSorted();
-    var h = '<section class="hero"><div><button class="btn ghost" data-go="dash" type="button" style="padding-left:0">' + ICON.back + 'Painel</button><span class="eyebrow" style="display:block">PCC · R.PPCM.51</span><h1>Detetor de metais</h1><p>Verificação de fiabilidade com os 3 corpos de prova (ferro 2,5 mm, não ferroso 3,0 mm e aço inox 3,0 mm), 10 passagens cada. Uma verificação por mês em cada máquina.</p></div>' +
-      '<div class="hero-actions"><button class="btn primary big" type="button" data-detnova="1">' + ICON.form + 'Nova verificação</button><button class="btn big" type="button" data-detxl="1">' + ICON.xl + "Exportar registo Excel</button></div></section>";
-    h += '<div class="row mob-only" style="margin-top:-8px"><button class="btn primary" type="button" data-detnova="1" style="flex:1">' + ICON.form + 'Nova verificação</button><button class="btn" type="button" data-detxl="1" style="flex:1">' + ICON.xl + "Exportar Excel</button></div>";
+    var h = '<section class="hero"><div><button class="btn ghost" data-go="dash" type="button" style="padding-left:0">' + ICON.back + 'Painel</button><span class="eyebrow" style="display:block">PCC · Detetor de metais</span><h1>Detetor de metais</h1><p><b>Monitorização:</b> ' + DET_DIA + ' vezes por dia em cada máquina, passando uma vez cada corpo de prova (ferro 2,5 mm, não ferroso 3,0 mm e aço inox 3,0 mm). <b>Verificação:</b> trimestral, 10 passagens de cada (R.PPCM.51).</p></div>' +
+      '<div class="hero-actions"><button class="btn primary big" type="button" data-detnova="diario">' + ICON.form + 'Monitorização</button><button class="btn big" type="button" data-detnova="fiabilidade">' + ICON.form + 'Verificação</button><button class="btn big" type="button" data-detxl="1">' + ICON.xl + "Exportar Excel</button></div></section>";
+    h += '<div class="row mob-only" style="margin-top:-8px"><button class="btn primary" type="button" data-detnova="diario" style="flex:1">' + ICON.form + 'Monitorização</button><button class="btn" type="button" data-detnova="fiabilidade" style="flex:1">Verificação</button><button class="btn" type="button" data-detxl="1" style="flex:1">' + ICON.xl + "Excel</button></div>";
     h += '<section class="kpis">' + detStatusCards() + "</section>";
-    h += '<section class="panel"><div class="ph"><h2>Verificações registadas</h2><span class="muted mono">' + list.length + "</span></div>" +
-      (list.length ? '<div class="tw"><table><thead><tr><th>Data</th><th>Hora</th><th>Máquina</th><th>MM</th><th>Lote</th><th>Operador</th><th>Resultado</th><th>Verificado por</th></tr></thead><tbody>' +
-        list.map(function (d) { return '<tr class="click" data-detopen="' + E(d._id) + '"><td>' + fmtDate(d.data) + "</td><td>" + E(d.hora || "") + "</td><td>" + E(d.maquina || "") + '</td><td class="mono">' + E(d.mm || "") + '</td><td class="mono">' + E(d.lote || "") + "</td><td>" + E(d.operador || "") + "</td><td>" + detChip(d) + "</td><td>" + E(d.verificador || "") + "</td></tr>"; }).join("") + "</tbody></table></div>"
-        : '<p class="muted">Ainda não há verificações. Toque em <b>Nova verificação</b> para registar a primeira.</p>') + "</section>";
+    h += '<section class="panel"><div class="ph"><h2>Testes registados</h2><span class="muted mono">' + list.length + "</span></div>" +
+      (list.length ? '<div class="tw"><table><thead><tr><th>Data</th><th>Hora</th><th>Tipo</th><th>Máquina</th><th>MM</th><th>Operador</th><th>Resultado</th><th>Verificado por</th></tr></thead><tbody>' +
+        list.slice(0, 200).map(function (d) { return '<tr class="click" data-detopen="' + E(d._id) + '"><td>' + fmtDate(d.data) + "</td><td>" + E(d.hora || "") + "</td><td>" + (detTipo(d) === "fiabilidade" ? "Verificação" : "Monitorização") + "</td><td>" + E(d.maquina || "") + '</td><td class="mono">' + E(d.mm || "") + "</td><td>" + E(d.operador || "") + "</td><td>" + detChip(d) + "</td><td>" + E(d.verificador || "") + "</td></tr>"; }).join("") + "</tbody></table></div>"
+        : '<p class="muted">Ainda não há testes. Toque em <b>Monitorização</b> para registar o primeiro.</p>') + "</section>";
     return h;
   }
 
   /* ---------- formulário ---------- */
-  function detNew() { return { maquina: lsGet("pcm_det_maq", DET_MAQ[0]), data: TODAY, hora: pad(new Date().getHours()) + ":" + pad(new Date().getMinutes()), mm: "", lote: "", operador: "", amostra: "", verificador: lsGet("pcm_auditor", ""), obs: "", res: { fe: Array(10).fill(""), nf: Array(10).fill(""), inox: Array(10).fill("") } }; }
+  function detNew(tipo) {
+    tipo = DET_TIPOS[tipo] ? tipo : "diario"; var n = DET_TIPOS[tipo].pass;
+    return { tipoTeste: tipo, maquina: lsGet("pcm_det_maq", DET_MAQ[0]), data: TODAY, hora: pad(new Date().getHours()) + ":" + pad(new Date().getMinutes()), turno: "", mm: "", lote: "", operador: "", amostra: "", verificador: lsGet("pcm_det_ver", lsGet("pcm_auditor", "")), obs: "", res: { fe: Array(n).fill(""), nf: Array(n).fill(""), inox: Array(n).fill("") } };
+  }
+  function passBtn(p, i, v, big) { return '<button type="button" class="dp' + (big ? " big" : "") + (v === "OK" ? " ok" : v === "NOK" ? " nok" : "") + '" data-dp="' + p[0] + '" data-di="' + i + '" aria-label="' + E(p[2]) + (big ? "" : " passagem " + (i + 1)) + '">' + (big ? "" : "<small>" + (i + 1) + "</small>") + (v === "OK" ? (big ? "✓ Detetado" : "✓") : v === "NOK" ? (big ? "✗ Não detetado" : "✗") : (big ? "Tocar" : "")) + "</button>"; }
   function viewDetForm() {
-    var d = state.detForm || (state.detForm = detNew());
+    var d = state.detForm || (state.detForm = detNew("diario")); var tipo = detTipo(d); var T = DET_TIPOS[tipo]; var big = T.pass === 1;
     var ops = uniq(state.records.filter(function (r) { return r.setor === "colagem"; }).map(function (r) { return r.operador; }));
-    var fld = function (id, lbl, val, extra) { return '<div class="fld"><label for="d-' + id + '">' + lbl + '</label><input id="d-' + id + '" data-df="' + id + '" value="' + E(val || "") + '"' + (extra || "") + "></div>"; };
-    var h = '<section class="hero"><div><button class="btn ghost" type="button" data-go="detetor" style="padding-left:0">' + ICON.back + 'Voltar</button><span class="eyebrow" style="display:block">' + (d._id ? "Editar verificação" : "Nova verificação") + ' · R.PPCM.51</span><h1>Detetor de metais</h1></div></section>';
+    var vers = AUDITORES.map(function (a) { return a.nome; }).concat(ops);
+    var fld = function (id, lbl, val, extra, req) { return '<div class="fld' + (req ? " req" : "") + '"><label for="d-' + id + '">' + lbl + '</label><input id="d-' + id + '" data-df="' + id + '" value="' + E(val || "") + '"' + (extra || "") + "></div>"; };
+    var h = '<section class="hero"><div><button class="btn ghost" type="button" data-go="detetor" style="padding-left:0">' + ICON.back + 'Voltar</button><span class="eyebrow" style="display:block">' + (d._id ? "Editar teste" : "Novo teste") + " · " + E(T.sub) + "</span><h1>Detetor de metais · " + E(T.nome) + "</h1></div></section>";
+    if (!d._id) h += '<section class="panel"><span class="eyebrow">Tipo de teste</span><div class="seg-pick" style="margin-top:8px">' + Object.keys(DET_TIPOS).map(function (k) { return '<button type="button" data-dettipo="' + k + '" class="' + (k === tipo ? "on" : "") + '">' + E(DET_TIPOS[k].nome) + "</button>"; }).join("") + "</div></section>";
     h += '<section class="panel"><h2>Identificação</h2><div class="form-head">' +
       '<div class="fld req"><label for="d-maquina">Máquina</label><select id="d-maquina" data-df="maquina">' + detMaqs().map(function (m) { return "<option" + (m === d.maquina ? " selected" : "") + ">" + E(m) + "</option>"; }).join("") + "</select></div>" +
       '<div class="fld req"><label for="d-data">Data</label><input type="date" id="d-data" data-df="data" value="' + E(d.data) + '"></div>' +
-      '<div class="fld"><label for="d-hora">Hora</label><input type="time" id="d-hora" data-df="hora" value="' + E(d.hora) + '"></div>' +
-      fld("mm", "MM", d.mm) + fld("lote", "Lote", d.lote) + fld("operador", "Operador", d.operador, ' list="dl-detop" autocomplete="off"') + fld("amostra", "Amostra utilizada", d.amostra) +
-      '<div class="fld req"><label for="d-verificador">Verificado por (assinatura)</label><select id="d-verificador" data-df="verificador"><option value="">Escolher…</option>' + AUDITORES.map(function (a) { return "<option" + (a.nome === d.verificador ? " selected" : "") + ">" + E(a.nome) + "</option>"; }).join("") + "</select></div>" +
-      '</div><datalist id="dl-detop">' + ops.slice(0, 80).map(function (o) { return '<option value="' + E(o) + '">'; }).join("") + "</datalist></section>";
-    h += '<section class="panel"><div class="ph"><h2>Resultado das passagens</h2><span class="muted mono" id="detCnt"></span></div><p class="muted" style="margin:0 0 10px;font-size:.88rem">Passe cada corpo de prova 10 vezes. Toque em cada passagem: <b>✓</b> detetado e rejeitado, <b>✗</b> não detetado (toque de novo para limpar).</p>' +
+      '<div class="fld req"><label for="d-hora">Hora</label><input type="time" id="d-hora" data-df="hora" value="' + E(d.hora) + '"></div>' +
+      (big ? '<div class="fld"><label for="d-turno">Turno</label><select id="d-turno" data-df="turno"><option value="">–</option>' + ["1", "2", "3"].map(function (t) { return '<option value="' + t + '"' + (String(d.turno) === t ? " selected" : "") + ">" + t + "º</option>"; }).join("") + "</select></div>" : "") +
+      fld("mm", "MM", d.mm) + fld("lote", "Lote", d.lote) + fld("operador", "Operador", d.operador, ' list="dl-detop" autocomplete="off"') +
+      (big ? "" : fld("amostra", "Amostra utilizada", d.amostra)) +
+      fld("verificador", big ? "Testado por" : "Verificado por (assinatura)", d.verificador, ' list="dl-detver" autocomplete="off"', true) +
+      '</div><datalist id="dl-detop">' + ops.slice(0, 80).map(function (o) { return '<option value="' + E(o) + '">'; }).join("") + '</datalist><datalist id="dl-detver">' + vers.slice(0, 120).map(function (o) { return '<option value="' + E(o) + '">'; }).join("") + "</datalist></section>";
+    h += '<section class="panel"><div class="ph"><h2>Resultado</h2><div class="row"><span class="muted mono" id="detCnt"></span>' + (big ? '<button class="btn" type="button" data-dall="*">Todos detetados</button>' : "") + "</div></div>" +
+      '<p class="muted" style="margin:0 0 10px;font-size:.88rem">' + (big ? "Passe cada corpo de prova uma vez. Toque para marcar <b>✓ Detetado</b> (rejeitado pelo detetor); toque de novo para <b>✗ Não detetado</b>." : "Passe cada corpo de prova 10 vezes. Toque em cada passagem: <b>✓</b> detetado e rejeitado, <b>✗</b> não detetado (toque de novo para limpar).") + "</p>" +
       DET_PECAS.map(function (p) {
-        return '<div class="detrow" style="--pc:' + p[3] + '"><div class="detlbl"><i></i><b>' + E(p[2]) + '</b><button class="btn" type="button" data-dall="' + p[0] + '">10 × ✓</button></div><div class="detpass">' +
-          d.res[p[0]].map(function (v, i) { return '<button type="button" class="dp' + (v === "OK" ? " ok" : v === "NOK" ? " nok" : "") + '" data-dp="' + p[0] + '" data-di="' + i + '" aria-label="' + E(p[2]) + " passagem " + (i + 1) + '"><small>' + (i + 1) + "</small>" + (v === "OK" ? "✓" : v === "NOK" ? "✗" : "") + "</button>"; }).join("") + "</div></div>";
+        return '<div class="detrow' + (big ? " one" : "") + '" style="--pc:' + p[3] + '"><div class="detlbl"><i></i><b>' + E(p[2]) + "</b>" + (big ? "" : '<button class="btn" type="button" data-dall="' + p[0] + '">10 × ✓</button>') + '</div><div class="detpass">' +
+          d.res[p[0]].map(function (v, i) { return passBtn(p, i, v, big); }).join("") + "</div></div>";
       }).join("") + '<div id="detVerdict"></div></section>';
     h += '<section class="panel"><div class="fld"><label for="d-obs">Observações / ação tomada</label><textarea id="d-obs" data-df="obs">' + E(d.obs || "") + "</textarea></div></section>";
-    h += '<div class="savebar"><span class="muted" id="detMsg" style="margin-right:auto;align-self:center;font-size:.86rem"></span><button class="btn" type="button" data-go="detetor">Cancelar</button><button class="btn primary big" type="button" id="detSave">' + (d._id ? "Guardar alterações" : "Guardar verificação") + "</button></div>";
+    h += '<div class="savebar"><span class="muted" id="detMsg" style="margin-right:auto;align-self:center;font-size:.86rem"></span><button class="btn" type="button" data-go="detetor">Cancelar</button><button class="btn primary big" type="button" id="detSave">' + (d._id ? "Guardar alterações" : "Guardar teste") + "</button></div>";
     return h;
   }
   function detVerdict() {
     var d = state.detForm; if (!d) return; var r = detRes(d); var c = $("#detCnt"), v = $("#detVerdict");
-    if (c) c.textContent = r.n + "/30 passagens" + (r.nok ? " · " + r.nok + " não detetadas" : "");
-    if (v) v.innerHTML = !r.n ? "" : r.nok ? '<div class="note" style="border-color:var(--nok);background:var(--nok-soft)"><b>PCC não conforme.</b> O detetor falhou ' + r.nok + ' passage' + (r.nok > 1 ? "ns" : "m") + '. Pare a linha, segregue o produto desde a última verificação conforme, avise a equipa PCM e registe a ação tomada em Observações.</div>' : r.completo ? '<div class="note info"><b>Conforme.</b> Os 3 corpos de prova foram detetados nas 10 passagens.</div>' : "";
+    if (c) c.textContent = r.n + "/" + r.tot + (r.nok ? " · " + r.nok + " não detetado" + (r.nok > 1 ? "s" : "") : "");
+    if (v) v.innerHTML = !r.n ? "" : r.nok ? '<div class="note" style="border-color:var(--nok);background:var(--nok-soft)"><b>PCC não conforme.</b> O detetor não detetou ' + r.nok + (r.nok > 1 ? " passagens" : " passagem") + '. Pare a linha, segregue o produto desde o último teste conforme, avise a equipa PCM e registe a ação tomada em Observações.</div>' : r.completo ? '<div class="note info"><b>Conforme.</b> Os 3 corpos de prova foram detetados.</div>' : "";
   }
   document.addEventListener("input", function (e) { var t = e.target; if (!state.detForm || state.view !== "detform" || !t.hasAttribute || !t.hasAttribute("data-df")) return; state.detForm[t.getAttribute("data-df")] = t.value; });
   document.addEventListener("change", function (e) { var t = e.target; if (!state.detForm || state.view !== "detform" || !t.hasAttribute || !t.hasAttribute("data-df")) return; state.detForm[t.getAttribute("data-df")] = t.value; });
   document.addEventListener("click", function (e) {
-    if (e.target.closest("[data-detnova]")) { state.detForm = detNew(); state.view = "detform"; render(); window.scrollTo(0, 0); return; }
+    var nv = e.target.closest("[data-detnova]"); if (nv) { state.detForm = detNew(nv.getAttribute("data-detnova")); state.view = "detform"; render(); window.scrollTo(0, 0); return; }
     if (e.target.closest("[data-detxl]")) { detExportAsk(); return; }
     var x = e.target.closest("[data-detxlm]"); if (x) { closeModal(); detExport(x.getAttribute("data-detxlm")); return; }
+    if (e.target.closest("[data-detxld]")) { closeModal(); detExportDiario(); return; }
     var o = e.target.closest("[data-detopen]"); if (o) { detOpen(o.getAttribute("data-detopen")); return; }
     if (state.view === "detform" && state.detForm) {
       var d = state.detForm;
+      var tp = e.target.closest("[data-dettipo]");
+      if (tp) { var keep = d; d = state.detForm = detNew(tp.getAttribute("data-dettipo")); ["maquina", "data", "hora", "mm", "lote", "operador", "amostra", "verificador", "obs", "turno"].forEach(function (k) { if (keep[k]) d[k] = keep[k]; }); render(); return; }
       var b = e.target.closest("[data-dp]");
-      if (b) { var p = b.getAttribute("data-dp"), i = +b.getAttribute("data-di"); var v = d.res[p][i]; d.res[p][i] = v === "" ? "OK" : v === "OK" ? "NOK" : ""; v = d.res[p][i]; b.className = "dp" + (v === "OK" ? " ok" : v === "NOK" ? " nok" : ""); b.innerHTML = "<small>" + (i + 1) + "</small>" + (v === "OK" ? "✓" : v === "NOK" ? "✗" : ""); detVerdict(); return; }
+      if (b) { var p = b.getAttribute("data-dp"), i = +b.getAttribute("data-di"); var v = d.res[p][i]; d.res[p][i] = v === "" ? "OK" : v === "OK" ? "NOK" : ""; var big = DET_TIPOS[detTipo(d)].pass === 1; b.outerHTML = passBtn(DET_PECAS.filter(function (q) { return q[0] === p; })[0], i, d.res[p][i], big); detVerdict(); return; }
       var a = e.target.closest("[data-dall]");
-      if (a) { var k = a.getAttribute("data-dall"); d.res[k] = d.res[k].map(function (v) { return v || "OK"; }); var y = window.scrollY; render(); window.scrollTo(0, y); return; }
+      if (a) { var k = a.getAttribute("data-dall"); DET_PECAS.forEach(function (q) { if (k === "*" || k === q[0]) d.res[q[0]] = d.res[q[0]].map(function (v) { return v || "OK"; }); }); var y = window.scrollY; render(); window.scrollTo(0, y); return; }
       if (e.target.closest("#detSave")) detSave();
     }
   });
   async function detSave() {
-    var d = state.detForm, msg = $("#detMsg"); var r = detRes(d);
-    var miss = []; if (!d.maquina) miss.push("máquina"); if (!d.data) miss.push("data"); if (!d.verificador) miss.push("verificado por");
+    var d = state.detForm, msg = $("#detMsg"); var r = detRes(d); var tipo = detTipo(d);
+    var miss = []; if (!d.maquina) miss.push("máquina"); if (!d.data) miss.push("data"); if (!d.hora) miss.push("hora"); if (!String(d.verificador || "").trim()) miss.push(tipo === "diario" ? "testado por" : "verificado por");
     if (miss.length) { msg.textContent = "Falta preencher: " + miss.join(", ") + "."; return; }
-    if (!r.completo) { msg.textContent = "Faltam " + (30 - r.n) + " passagens por marcar."; return; }
+    if (!r.completo) { msg.textContent = "Faltam " + (r.tot - r.n) + " resultado" + (r.tot - r.n > 1 ? "s" : "") + " por marcar."; return; }
     if (r.nok && !String(d.obs || "").trim()) { msg.textContent = "PCC não conforme: descreva a ação tomada em Observações."; $("#d-obs") && $("#d-obs").focus(); return; }
-    var body = { tipo: "detetor", registo: "R.PPCM.51", maquina: d.maquina, data: d.data, hora: LOGIC.normHora(d.hora) || "", mm: (d.mm || "").trim(), lote: (d.lote || "").trim(), operador: (d.operador || "").trim(), amostra: (d.amostra || "").trim(), verificador: d.verificador, obs: (d.obs || "").trim(), res: d.res, resultado: r.ok ? "OK" : "NOK", nok: r.nok, uid: d.uid || ("d" + Date.now() + Math.random().toString(36).slice(2, 6)), criadoEm: d.criadoEm || new Date().toISOString(), atualizadoEm: new Date().toISOString() };
-    lsSet("pcm_det_maq", d.maquina); lsSet("pcm_auditor", d.verificador);
+    var body = { tipo: "detetor", tipoTeste: tipo, registo: tipo === "fiabilidade" ? "R.PPCM.51" : "Teste diário", maquina: d.maquina, data: d.data, hora: LOGIC.normHora(d.hora) || "", turno: d.turno || "", mm: (d.mm || "").trim(), lote: (d.lote || "").trim(), operador: (d.operador || "").trim(), amostra: (d.amostra || "").trim(), verificador: String(d.verificador).trim(), obs: (d.obs || "").trim(), res: d.res, resultado: r.ok ? "OK" : "NOK", nok: r.nok, uid: d.uid || ("d" + Date.now() + Math.random().toString(36).slice(2, 6)), criadoEm: d.criadoEm || new Date().toISOString(), atualizadoEm: new Date().toISOString() };
+    lsSet("pcm_det_maq", d.maquina); lsSet("pcm_det_ver", body.verificador);
     var btn = $("#detSave"); btn.disabled = true;
     try {
       var saved;
@@ -2399,52 +2424,54 @@ var DETETOR_TPL="UEsDBBQABgAIAAAAIQCvh0Lk2AEAABIIAAATAAgCW0NvbnRlbnRfVHlwZXNdLnh
         saved = state.detetor.filter(function (x) { return x.uid === body.uid; })[0];
         lsSet("pcm_detetor", state.detetor);
       }
-      toast(r.ok ? "Verificação gravada · conforme." : "Verificação gravada · NÃO CONFORME.");
+      toast(DET_TIPOS[tipo].nome + " gravado · " + (r.ok ? "conforme." : "NÃO CONFORME."));
       state.detForm = null; state.view = "detetor"; render(); window.scrollTo(0, 0);
-      if (saved && EJ()) detSync(saved, false);
+      if (saved && EJ()) detSync(saved, false).catch(function () { });
     } catch (err) { btn.disabled = false; msg.textContent = writeErr(err); }
   }
 
   /* ---------- detalhe ---------- */
   function detOpen(id) {
-    var d = state.detetor.filter(function (x) { return x._id === id; })[0]; if (!d) return;
-    var kv = [["Máquina", d.maquina], ["Data", fmtDate(d.data)], ["Hora", d.hora], ["MM", d.mm], ["Lote", d.lote], ["Operador", d.operador], ["Amostra utilizada", d.amostra], ["Verificado por", d.verificador]];
-    modal('<div class="ph"><div><span class="eyebrow">Detetor de metais · R.PPCM.51</span><h2>' + E(d.maquina) + " · " + fmtDate(d.data) + "</h2></div>" + detChip(d) + "</div>" +
+    var d = state.detetor.filter(function (x) { return x._id === id; })[0]; if (!d) return; var tipo = detTipo(d); var big = DET_TIPOS[tipo].pass === 1;
+    var kv = [["Tipo", DET_TIPOS[tipo].nome], ["Máquina", d.maquina], ["Data", fmtDate(d.data)], ["Hora", d.hora], ["Turno", d.turno], ["MM", d.mm], ["Lote", d.lote], ["Operador", d.operador], ["Amostra utilizada", d.amostra], [big ? "Testado por" : "Verificado por", d.verificador]].filter(function (p) { return p[1] || p[0] === "MM"; });
+    modal('<div class="ph"><div><span class="eyebrow">Detetor de metais · ' + E(DET_TIPOS[tipo].nome) + "</span><h2>" + E(d.maquina) + " · " + fmtDate(d.data) + (d.hora ? " " + E(d.hora) : "") + "</h2></div>" + detChip(d) + "</div>" +
       '<div class="kv">' + kv.map(function (p) { return "<div><span>" + p[0] + "</span>" + E(p[1] || "—") + "</div>"; }).join("") + "</div>" +
-      DET_PECAS.map(function (p) { return '<div class="detrow" style="--pc:' + p[3] + '"><div class="detlbl"><i></i><b>' + E(p[2]) + '</b></div><div class="detpass">' + ((d.res || {})[p[0]] || []).map(function (v, i) { return '<span class="dp' + (v === "OK" ? " ok" : v === "NOK" ? " nok" : "") + '"><small>' + (i + 1) + "</small>" + (v === "OK" ? "✓" : v === "NOK" ? "✗" : "") + "</span>"; }).join("") + "</div></div>"; }).join("") +
+      DET_PECAS.map(function (p) { return '<div class="detrow' + (big ? " one" : "") + '" style="--pc:' + p[3] + '"><div class="detlbl"><i></i><b>' + E(p[2]) + '</b></div><div class="detpass">' + ((d.res || {})[p[0]] || []).map(function (v, i) { return '<span class="dp' + (big ? " big" : "") + (v === "OK" ? " ok" : v === "NOK" ? " nok" : "") + '">' + (big ? "" : "<small>" + (i + 1) + "</small>") + (v === "OK" ? (big ? "✓ Detetado" : "✓") : v === "NOK" ? (big ? "✗ Não detetado" : "✗") : "") + "</span>"; }).join("") + "</div></div>"; }).join("") +
       (d.obs ? '<div class="note info"><b>Observações:</b> ' + E(d.obs) + "</div>" : "") +
       '<div class="row" style="justify-content:flex-end"><button class="btn danger" type="button" id="detDel" data-id="' + E(d._id) + '">Apagar</button><button class="btn" type="button" id="detEdit" data-id="' + E(d._id) + '">Editar</button><button class="btn primary" type="button" data-close>Fechar</button></div>');
   }
   document.addEventListener("click", async function (e) {
     var t = e.target;
-    if (t.id === "detEdit") { var d = state.detetor.filter(function (x) { return x._id === t.getAttribute("data-id"); })[0]; if (!d) return; closeModal(); state.detForm = JSON.parse(JSON.stringify(d)); state.view = "detform"; render(); window.scrollTo(0, 0); }
-    if (t.id === "detDel") { t.outerHTML = '<span class="muted">Apagar esta verificação?</span><button class="btn danger" type="button" id="detDelOk" data-id="' + E(t.getAttribute("data-id")) + '">Sim, apagar</button>'; }
+    if (t.id === "detEdit") { var d = state.detetor.filter(function (x) { return x._id === t.getAttribute("data-id"); })[0]; if (!d) return; closeModal(); state.detForm = JSON.parse(JSON.stringify(d)); state.detForm.tipoTeste = detTipo(d); state.view = "detform"; render(); window.scrollTo(0, 0); }
+    if (t.id === "detDel") { t.outerHTML = '<span class="muted">Apagar este teste?</span><button class="btn danger" type="button" id="detDelOk" data-id="' + E(t.getAttribute("data-id")) + '">Sim, apagar</button>'; }
     if (t.id === "detDelOk") {
       var id = t.getAttribute("data-id");
-      try { if (state.db) await state.db.doc("detetor/" + id).delete(); else { state.detetor = state.detetor.filter(function (x) { return x._id !== id; }); lsSet("pcm_detetor", state.detetor); } closeModal(); toast("Verificação apagada."); render(true); }
+      try { if (state.db) await state.db.doc("detetor/" + id).delete(); else { state.detetor = state.detetor.filter(function (x) { return x._id !== id; }); lsSet("pcm_detetor", state.detetor); } closeModal(); toast("Teste apagado."); render(true); }
       catch (err) { toast(writeErr(err)); }
     }
   });
 
   /* ---------- envio (versão sem Claude) ---------- */
   function detMail(d) {
-    var r = detRes(d);
-    var subj = "[PCM-DET] Detetor de metais · " + d.maquina + " · " + fmtDate(d.data) + (d.hora ? " " + d.hora : "") + " · " + (r.ok ? "Conforme" : "NÃO CONFORME") + " · " + (d.verificador || "");
-    var L = ["Verificação do detetor de metais (R.PPCM.51) registada na app Auditorias PCM.", "",
-      "Máquina: " + d.maquina, "Data: " + fmtDate(d.data) + (d.hora ? "  Hora: " + d.hora : ""), "MM: " + (d.mm || "—") + "  Lote: " + (d.lote || "—"), "Operador: " + (d.operador || "—") + "  Amostra: " + (d.amostra || "—"), "Verificado por: " + (d.verificador || "—"), ""]
-      .concat(DET_PECAS.map(function (p) { var a = (d.res || {})[p[0]] || []; return p[2] + ": " + a.filter(function (v) { return v === "OK"; }).length + "/10 detetadas"; }))
-      .concat(["Resultado: " + (r.ok ? "CONFORME" : "NÃO CONFORME (" + r.nok + " passagens não detetadas)")]);
+    var r = detRes(d); var tipo = detTipo(d);
+    var subj = "[PCM-DET] Detetor de metais · " + DET_TIPOS[tipo].nome + " · " + d.maquina + " · " + fmtDate(d.data) + (d.hora ? " " + d.hora : "") + " · " + (r.ok ? "Conforme" : "NÃO CONFORME") + " · " + (d.verificador || "");
+    var L = ["Detetor de metais · " + DET_TIPOS[tipo].nome + " registado na app Auditorias PCM.", "",
+      "Máquina: " + d.maquina, "Data: " + fmtDate(d.data) + (d.hora ? "  Hora: " + d.hora : "") + (d.turno ? "  Turno: " + d.turno : ""), "MM: " + (d.mm || "—") + "  Lote: " + (d.lote || "—"), "Operador: " + (d.operador || "—") + (d.amostra ? "  Amostra: " + d.amostra : ""), (tipo === "diario" ? "Testado por: " : "Verificado por: ") + (d.verificador || "—"), ""]
+      .concat(DET_PECAS.map(function (p) { var a = (d.res || {})[p[0]] || []; return p[2] + ": " + (a.length === 1 ? (a[0] === "OK" ? "detetado" : "NÃO detetado") : a.filter(function (v) { return v === "OK"; }).length + "/" + a.length + " detetadas"); }))
+      .concat(["Resultado: " + (r.ok ? "CONFORME" : "NÃO CONFORME")]);
     if (d.obs) L.push("Obs / ação: " + d.obs);
     L.push("", auditCode(d));
     return { subj: subj, body: L.join("\n") };
   }
+  function detSendAll() { var c = (window.PCM_CONFIG || window.PCV_CONFIG || {}).detetorEmail; return c !== "nok"; }
   async function detSync(d, quiet) {
+    if (detTipo(d) === "diario" && !detSendAll() && detRes(d).ok) return;
     var st = lsGet("pcm_detauto", {}); st[d._id] = "pendente"; lsSet("pcm_detauto", st);
     try {
       var m = detMail(d); await ejSend(mailTo(), m.subj, m.body);
       st = lsGet("pcm_detauto", {}); st[d._id] = "enviado"; lsSet("pcm_detauto", st);
-      if (!quiet) toast("Verificação enviada ao Ricardo e ao Mário.");
-    } catch (e) { if (!quiet) toast("Sem ligação: a verificação ficou guardada e segue quando houver rede."); throw e; }
+      if (!quiet) toast("Teste enviado ao Ricardo e ao Mário.");
+    } catch (e) { if (!quiet) toast("Sem ligação: o teste ficou guardado e segue quando houver rede."); throw e; }
   }
   async function detRetry() {
     if (state.db || !EJ()) return; var st = lsGet("pcm_detauto", {});
@@ -2452,17 +2479,72 @@ var DETETOR_TPL="UEsDBBQABgAIAAAAIQCvh0Lk2AEAABIIAAATAAgCW0NvbnRlbnRfVHlwZXNdLnh
     for (var i = 0; i < list.length; i++) { try { await detSync(list[i], true); } catch (e) { break; } }
   }
 
-  /* ---------- exportar o impresso R.PPCM.51 preenchido ---------- */
+  /* ---------- exportar ---------- */
   function detExportAsk() {
-    var ms = detMaqs().filter(function (m) { return state.detetor.some(function (d) { return d.maquina === m; }); });
-    if (!ms.length) { toast("Ainda não há verificações para exportar."); return; }
-    if (ms.length === 1) { detExport(ms[0]); return; }
-    modal('<h2>Exportar registo R.PPCM.51</h2><p class="muted" style="margin:0">Um impresso por máquina. Escolha a máquina:</p><div class="row">' + ms.map(function (m) { return '<button class="btn primary big" type="button" data-detxlm="' + E(m) + '">' + E(m) + "</button>"; }).join("") + '</div><div class="row" style="justify-content:flex-end"><button class="btn ghost" type="button" data-close>Cancelar</button></div>');
+    if (!state.detetor.length) { toast("Ainda não há testes para exportar."); return; }
+    var mon = detSorted().filter(function (d) { return detTipo(d) === "diario"; });
+    var meses = []; mon.forEach(function (d) { var ym = String(d.data).slice(0, 7); if (meses.indexOf(ym) < 0) meses.push(ym); });
+    var mm = detMaqs().filter(function (m) { return mon.some(function (d) { return d.maquina === m; }); });
+    var ms = detMaqs().filter(function (m) { return state.detetor.some(function (d) { return d.maquina === m && detTipo(d) === "fiabilidade"; }); });
+    modal('<h2>Exportar Excel</h2>' +
+      '<div class="grid" style="gap:14px"><div><b>Monitorização · registo do mês</b><p class="muted" style="margin:2px 0 8px">Impresso de monitorização (1 passagem de cada corpo de prova), um por máquina e por mês.</p>' +
+      (mm.length ? '<div class="row"><select id="detMes" aria-label="Mês">' + meses.map(function (ym) { return '<option value="' + ym + '">' + mesLabel(ym) + "</option>"; }).join("") + "</select>" + mm.map(function (m) { return '<button class="btn primary big" type="button" data-detxmon="' + E(m) + '">' + ICON.xl + E(m) + "</button>"; }).join("") + '<button class="btn" type="button" data-detxld="1">Lista de todos</button></div>' : '<span class="muted">Ainda não há monitorizações.</span>') + "</div>" +
+      '<div><b>Verificação trimestral · R.PPCM.51</b><p class="muted" style="margin:2px 0 8px">O impresso de verificação preenchido, um por máquina.</p><div class="row">' + (ms.length ? ms.map(function (m) { return '<button class="btn big" type="button" data-detxlm="' + E(m) + '">' + ICON.xl + E(m) + "</button>"; }).join("") : '<span class="muted">Ainda não há verificações.</span>') + "</div></div></div>" +
+      '<div class="row" style="justify-content:flex-end"><button class="btn ghost" type="button" data-close>Fechar</button></div>');
+  }
+  document.addEventListener("click", function (e) { var b = e.target.closest("[data-detxmon]"); if (!b) return; var ym = ($("#detMes") || {}).value; closeModal(); detExportMonit(b.getAttribute("data-detxmon"), ym); });
+  /* impresso de monitorização: gerado a partir do R.PPCM.51 (mesmo cabeçalho e logo), um bloco de 3 linhas por teste e uma só coluna de resultado */
+  async function detExportMonit(maq, ym) {
+    if (typeof JSZip === "undefined") { toast("Não foi possível carregar o gerador de Excel. Verifique a ligação."); return; }
+    var list = detSorted().filter(function (d) { return detTipo(d) === "diario" && d.maquina === maq && String(d.data).slice(0, 7) === ym; }).reverse();
+    if (!list.length) { toast("Sem monitorizações de " + maq + " em " + mesLabel(ym) + "."); return; }
+    try {
+      var zip = await JSZip.loadAsync(DETETOR_TPL, { base64: true });
+      var path = "xl/worksheets/sheet1.xml"; var xml = await zip.file(path).async("string");
+      var tpl = [3, 4, 5].map(function (r) { return new RegExp('<row r="' + r + '"[^>]*>[\\s\\S]*?</row>').exec(xml)[0]; });
+      xml = xml.replace(/<row r="(\d+)"[^>]*?(?:\/>|>[\s\S]*?<\/row>)/g, function (m, r) { return +r >= 3 ? "" : m; });
+      var rows = "", merges = [];
+      list.forEach(function (d, k) {
+        var base = 3 + 3 * k; var r = d.res || {};
+        var block = tpl.map(function (t, j) { var nr = base + j; return t.replace(/(<row r=")\d+"/, "$1" + nr + '"').replace(/(<c r="[A-Z]+)\d+"/g, "$1" + nr + '"'); }).join("");
+        var set = function (ref, v) { block = setCellXml(block, ref, v); };
+        set("A" + base, fmtDate(d.data)); set("B" + base, d.hora || ""); set("C" + base, d.mm || ""); set("D" + base, d.lote || ""); set("E" + base, d.operador || ""); set("R" + base, d.verificador || "");
+        DET_PECAS.forEach(function (p, j) { var v = (r[p[0]] || [])[0]; set("F" + (base + j), j === 0 && d.turno ? "Turno " + d.turno : ""); set("H" + (base + j), v === "OK" ? "OK" : v === "NOK" ? "NOK" : ""); });
+        rows += block;
+        ["A", "B", "C", "D", "E", "F", "R"].forEach(function (c) { merges.push(c + base + ":" + c + (base + 2)); });
+      });
+      xml = xml.replace("</sheetData>", rows + "</sheetData>");
+      var keep = []; xml.replace(/<mergeCell ref="([A-Z]+)(\d+):([A-Z]+)(\d+)"\/>/g, function (m, a, r1) { if (+r1 < 3) keep.push(m); return m; });
+      var all = keep.concat(merges.map(function (r) { return '<mergeCell ref="' + r + '"/>'; }));
+      xml = xml.replace(/<mergeCells count="\d+">[\s\S]*?<\/mergeCells>/, '<mergeCells count="' + all.length + '">' + all.join("") + "</mergeCells>");
+      xml = xml.replace(/<dimension ref="[^"]*"\/>/, '<dimension ref="A1:S' + (2 + 3 * list.length) + '"/>');
+      xml = xml.replace(/<col min="(9|1[0-7])" max="(\d+)"([^>]*?)\/>/g, function (m, a, b, rest) { return '<col min="' + a + '" max="' + b + '"' + rest.replace(/\s*hidden="\d"/, "") + ' hidden="1"/>'; });
+      xml = xml.replace(/<col min="8" max="8" width="[^"]*"/, '<col min="8" max="8" width="11"').replace(/<col min="2" max="5" width="[^"]*"/, '<col min="2" max="5" width="12"'); xml = setCellXml(xml, "H2", "OK/NOK"); xml = setCellXml(xml, "F1", "Turno"); 
+      xml = xml.replace("Registo de Verificação de PCC", "Registo de Monitorização de PCC").replace(/(<oddHeader[^>]*>[\s\S]*?Detetor de metais)/, "$1 · " + xmlEsc(maq) + " · " + mesLabel(ym));
+      zip.file(path, xml);
+      var blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      await saveFile("Monitorizacao Detetor de metais " + maq + " " + ym + ".xlsx", blob);
+      toast(list.length + " monitorizações de " + maq + " em " + mesLabel(ym) + ".");
+    } catch (err) { toast("Não foi possível gerar o registo (" + (err && err.message || err) + ")."); }
+  }
+  async function detExportDiario() {
+    if (typeof JSZip === "undefined") { toast("Não foi possível carregar o gerador de Excel. Verifique a ligação."); return; }
+    var list = detSorted().filter(function (d) { return detTipo(d) === "diario"; }).reverse();
+    if (!list.length) { toast("Ainda não há testes diários."); return; }
+    var lbl = function (v) { return v === "OK" ? "Detetado" : v === "NOK" ? "NÃO detetado" : ""; };
+    var rows = [["Data", "Hora", "Turno", "Máquina", "MM", "Lote", "Operador", "Ferro 2,5 mm", "Não ferroso 3,0 mm", "Aço inox 3,0 mm", "Resultado", "Testado por", "Observações / ação"]]
+      .concat(list.map(function (d) { var r = d.res || {}; return [XL.isoToSerial(d.data), d.hora || "", d.turno ? +d.turno : "", d.maquina || "", d.mm || "", d.lote || "", d.operador || "", lbl((r.fe || [])[0]), lbl((r.nf || [])[0]), lbl((r.inox || [])[0]), detRes(d).ok ? "Conforme" : "NÃO CONFORME", d.verificador || "", d.obs || ""]; }));
+    try {
+      var z = XL.buildSmall(JSZip, [{ name: "Testes diários", rows: rows, dateCol: 0 }], []);
+      var blob = await z.generateAsync({ type: "blob", compression: "DEFLATE", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      await saveFile("Detetor de metais - testes diarios " + TODAY + ".xlsx", blob);
+      toast(list.length + " testes diários exportados.");
+    } catch (err) { toast("Não foi possível gerar o ficheiro (" + (err && err.message || err) + ")."); }
   }
   function xmlEsc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
   function setCellXml(xml, ref, val) {
     var re = new RegExp('<c r="' + ref + '"([^>]*?)(?:/>|>[\\s\\S]*?</c>)');
-    var m = re.exec(xml); var cell;
+    var m = re.exec(xml);
     var mk = function (attrs) { attrs = (attrs || "").replace(/\s+t="[^"]*"/, ""); return val == null || val === "" ? '<c r="' + ref + '"' + attrs + "/>" : '<c r="' + ref + '"' + attrs + ' t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(val) + "</t></is></c>"; };
     if (m) return xml.replace(m[0], function () { return mk(m[1]); });
     var row = ref.replace(/[A-Z]+/, ""); var rm = new RegExp('(<row r="' + row + '"[^>]*>)([\\s\\S]*?)(</row>)').exec(xml);
@@ -2475,23 +2557,20 @@ var DETETOR_TPL="UEsDBBQABgAIAAAAIQCvh0Lk2AEAABIIAAATAAgCW0NvbnRlbnRfVHlwZXNdLnh
       var path = "xl/worksheets/sheet1.xml"; var xml = await zip.file(path).async("string");
       var blocks = {}; var re = /<c r="A(\d+)"[^>]*?><v>(\d+(?:\.\d+)?)<\/v><\/c>/g, m;
       while ((m = re.exec(xml))) { var r = +m[1]; if (r < 3) continue; blocks[XL.serialToISO(+m[2]).slice(0, 7)] = r; }
-      var porMes = {}; detSorted().slice().reverse().forEach(function (d) { if (d.maquina === maq) porMes[String(d.data).slice(0, 7)] = d; });
+      var porMes = {}; detSorted().slice().reverse().forEach(function (d) { if (d.maquina === maq && detTipo(d) === "fiabilidade") porMes[String(d.data).slice(0, 7)] = d; });
       var fora = [], n = 0; var COLS = ["H", "I", "J", "K", "L", "M", "N", "O", "P", "Q"];
       Object.keys(porMes).forEach(function (ym) {
         var d = porMes[ym], r = blocks[ym]; if (!r) { fora.push(mesLabel(ym)); return; }
         xml = setCellXml(xml, "A" + r, fmtDate(d.data)); xml = setCellXml(xml, "B" + r, d.hora || ""); xml = setCellXml(xml, "C" + r, d.mm || "");
         xml = setCellXml(xml, "D" + r, d.lote || ""); xml = setCellXml(xml, "E" + r, d.operador || ""); xml = setCellXml(xml, "R" + r, d.verificador || "");
-        DET_PECAS.forEach(function (p, k) {
-          xml = setCellXml(xml, "F" + (r + k), d.amostra || "");
-          ((d.res || {})[p[0]] || []).forEach(function (v, i) { xml = setCellXml(xml, COLS[i] + (r + k), v === "OK" ? "OK" : v === "NOK" ? "NOK" : ""); });
-        });
+        xml = setCellXml(xml, "F" + r, d.amostra || "");
+        DET_PECAS.forEach(function (p, k) { ((d.res || {})[p[0]] || []).forEach(function (v, i) { xml = setCellXml(xml, COLS[i] + (r + k), v === "OK" ? "OK" : v === "NOK" ? "NOK" : ""); }); });
         n++;
       });
       zip.file(path, xml);
       var blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      var name = "R.PPCM.51 Detetor de metais " + maq + " " + TODAY + ".xlsx";
-      await saveFile(name, blob);
-      toast(n + " mês" + (n === 1 ? "" : "es") + " no registo de " + maq + (fora.length ? ". Fora do impresso (jan/26–mar/27): " + fora.join(", ") : "") + ".");
+      await saveFile("R.PPCM.51 Detetor de metais " + maq + " " + TODAY + ".xlsx", blob);
+      toast(n + " teste" + (n === 1 ? "" : "s") + " de fiabilidade no registo de " + maq + (fora.length ? ". Fora do impresso (jan/26–mar/27): " + fora.join(", ") : "") + ".");
     } catch (err) { toast("Não foi possível gerar o registo (" + (err && err.message || err) + ")."); }
   }
 
