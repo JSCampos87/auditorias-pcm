@@ -304,6 +304,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
 <div id="toast" class="toast" hidden></div>
 
 <script src="config.js"></script>
+<script src="firebase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -1110,11 +1111,32 @@ var DETETOR_TPL="UEsDBBQABgAIAAAAIQCvh0Lk2AEAABIIAAATAAgCW0NvbnRlbnRfVHlwZXNdLnh
       }, function () { });
     });
     detSubscribe(db);
+    if (window.claude && window.claude.__standalone) var migT = setInterval(function () { if (state.ready.aud && state.ready.hist >= KEYS.length) { clearInterval(migT); migrarLocal(); } }, 1000);
     db.doc("config/ultima").onSnapshot(function (d) { state.ultima = d.exists ? d.data() : null; softRender(); }, function () { });
     db.doc("config/metas").onSnapshot(function (d) {
       if (d.exists) state.metas = Object.assign({}, META_DEF, d.data().semanal || {});
       softRender();
     }, function () { });
+  }
+
+  /* ---------- passagem dos dados deste dispositivo para a base partilhada (uma vez por dispositivo) ----------
+     Antes, fora do claude.ai, cada browser guardava as suas auditorias no localStorage.
+     Na primeira ligação ao Firebase envia-se o que este dispositivo tem e a base ainda não tem. */
+  function migrarLocal() {
+    if (lsGet("pcm_migrado_fb", false)) return;
+    var db = state.db, jobs = [], nA = 0, nD = 0, nH = 0;
+    var sig = function (a) { return [a.setor, a.data, a.of, a.turno, a.operador, a.criadoEm].join("|"); };
+    var limpa = function (a) { var b = Object.assign({}, a); delete b._id; delete b.fotoBlob; return b; };
+    var have = {}; state.audits.forEach(function (a) { have[sig(a)] = 1; });
+    lsGet("pcm_audits", []).forEach(function (a) { if (a && !have[sig(a)]) { have[sig(a)] = 1; nA++; jobs.push(db.collection("auditorias").add(limpa(a))); } });
+    var dsig = function (d) { return JSON.stringify(limpa(d)); }, haveD = {};
+    (state.detetor || []).forEach(function (d) { haveD[dsig(d)] = 1; });
+    lsGet("pcm_detetor", []).forEach(function (d) { if (d && !haveD[dsig(d)]) { haveD[dsig(d)] = 1; nD++; jobs.push(db.collection("detetor").add(limpa(d))); } });
+    var h = lsGet("pcm_hist", null);
+    if (h) KEYS.forEach(function (k) { if (!state.histInfo[k] && h[k] && h[k].length) { nH++; jobs.push(db.doc("historico/" + k).set({ rows: h[k], atualizado: new Date().toISOString(), ficheiro: "enviado deste dispositivo" })); } });
+    if (!jobs.length) { lsSet("pcm_migrado_fb", true); return; }
+    Promise.all(jobs).then(function () { lsSet("pcm_migrado_fb", true); toast("Dados deste dispositivo enviados para a base partilhada: " + nA + " auditorias, " + nD + " do detetor, " + nH + " históricos."); })
+      .catch(function (e) { toast("Nem todos os dados deste dispositivo foram enviados (" + (e && e.message || e) + "). Volta a tentar quando reabrir a app."); });
   }
 
   /* ---------- registos combinados ---------- */
@@ -2579,8 +2601,8 @@ var DETETOR_TPL="UEsDBBQABgAIAAAAIQCvh0Lk2AEAABIIAAATAAgCW0NvbnRlbnRfVHlwZXNdLnh
   var C = window.claude;
   if (!C || !C.use) { state.standalone = true; localMode(); }
   else {
-    state.standalone = false;
-    var dbT = setTimeout(function () { if (!state.db && !state.local) localMode(); }, 6000);
+    state.standalone = !!C.__standalone;
+    var dbT = setTimeout(function () { if (!state.db && !state.local) localMode(); }, 20000);
     C.use("db").then(function (db) { clearTimeout(dbT); if (state.local) return; if (!db) { localMode(); return; } state.db = db; subscribe(); }).catch(function () { clearTimeout(dbT); if (!state.local) localMode(); });
     state.sampleWhy = "a ligar";
     C.use("sample").then(function (s) { state.sample = s; state.sampleWhy = s ? "" : "semclaude"; if (s) s.limits().then(function (l) { state.sampleImg = !!(l && l.images); if (!state.sampleImg) { state.sample = null; state.sampleWhy = "semimagens"; } }).catch(function () { state.sample = null; state.sampleWhy = "semimagens"; }); });
